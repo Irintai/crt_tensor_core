@@ -5,9 +5,9 @@ from functools import reduce
 import operator
 import random
 
-from .dtype import Dtype, parse_dtype, get_promoted_dtype, dtype_to_python_type
-from .device import Device, cpu, get_device
-from .utils import (
+from ._internal.dtype import Dtype, parse_dtype, get_promoted_dtype, dtype_to_python_type
+from ._internal.device import Device, cpu, get_device
+from ._internal.utils import (
     calculate_strides, flatten_index, unflatten_index, is_scalar, is_sequence,
     broadcast_shapes, reshape_broadcast, get_shape_from_nested_list,
     validate_nested_list, flatten_nested_list, reshape_list

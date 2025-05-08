@@ -1,7 +1,7 @@
 # __init__.py
 from .tensor import Tensor
-from .dtype import Dtype, parse_dtype
-from .device import Device, cpu, cuda
+from ._internal.dtype import Dtype, parse_dtype
+from ._internal.device import Device, cpu, cuda
 from .ops import D, H, R, syntonic_stability
 from .registry import registry
 
