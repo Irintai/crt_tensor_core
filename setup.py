@@ -31,7 +31,7 @@ class BuildExt(build_ext):
 
 setup(
     name="crt_tensor_core",
-    version="0.1.0",
+    version="0.3.0",
     author="Andrew 'Irintai' Orth",
     author_email="drewski871@gmail.com",
     description="A tensor library for Cosmological Recursion Theory",

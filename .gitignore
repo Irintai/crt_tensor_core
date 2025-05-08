@@ -1,0 +1,29 @@
+/__pycache__/*
+*.py[cod]
+*.pyo
+__pycache__/*
+*.egg-info/*
+*.egg
+dist/*
+build/*
+
+# Jupyter Notebook files
+*.pyo
+__pycache__/*
+*.egg-info/*
+*.egg
+dist/*
+build/*
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/*
+*.ipynb_checkpoints/*
+
+#Folders
+tempops/*
+
+#Build files
+gemini.ops.py
+gemini.ops.pyc
+gemini.ops.pyo
+gemini.ops.pyd
