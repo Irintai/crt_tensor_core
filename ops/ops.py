@@ -7,21 +7,20 @@ and related metrics, based on the definitions in the CRT mathematical foundation
 
 The main operators are available as D, H, R, and S functions, with their corresponding
 class implementations DHat, HHat, RHat, and SyntonicIndex for configurable instances.
-
-Additionally, this module provides advanced analysis tools for fractal properties, 
-quantum-classical transitions, and phase-cycle relationships in CRT systems.
 """
 
 import warnings
 from typing import List, Dict, Optional, Union, Callable, Tuple, Any
 
-from .tensor import Tensor
-from .autograd import Function
-from ._internal.dtype import Dtype
+from ..tensor import Tensor
+from ..autograd import Function
+from .._internal.dtype import Dtype
 from .profiles import ProfileConfig, alpha_profile, beta_profile, gamma_profile, epsilon_profile
 from .projections import Projection, get_projection, apply_projections
 from .syntony import syntonic_stability_index, calculate_syntonic_stability
 from .core_ops import complex_add, complex_sub, complex_mul, complex_div, complex_conj, norm, ensure_complex_arithmetic
+import math
+from ..registry import registry
 
 # --- Constants ---
 PI = 3.14159265358979323846
@@ -35,7 +34,7 @@ DEFAULT_KAPPA_FOR_S_CALC_H = 1.0
 DEFAULT_LAMBDA_FOR_S_CALC_H = 1.0
 DEFAULT_EPSILON0_FOR_S_CALC_H = 1e-6
 DEFAULT_MU_FOR_S_CALC_H = 1.0
-DEFAULT_ALPHA_FOR_S_CALC_H_D_NORM = 0.5 # Alpha for D_norm calc within H within S calc
+DEFAULT_ALPHA_FOR_S_CALC_H_D_NORM = 0.5  # Alpha for D_norm calc within H within S calc
 
 # Default for D_norm calculation within H operator
 DEFAULT_ALPHA_FOR_H_D_NORM_CALC = 0.5
@@ -67,7 +66,7 @@ class NormFunction(Function):
         input_tensor, norm_val_tensor = ctx.saved_tensors
         norm_scalar = norm_val_tensor.item()
 
-        if abs(norm_scalar) < 1e-12: # Avoid division by zero
+        if abs(norm_scalar) < 1e-12:  # Avoid division by zero
             grad_input = Tensor.zeros(input_tensor.shape, dtype=grad_output.dtype, device=input_tensor.device)
         else:
             # Chain rule: (dL/d_norm) * (d_norm / d_input)
@@ -109,7 +108,7 @@ class DifferentiationFunction(Function):
             if isinstance(alpha_coeffs, (float, int)):
                 alpha_list = [Tensor(alpha_coeffs)] * num_projections
             elif isinstance(alpha_coeffs, Tensor):
-                if alpha_coeffs.shape == (): # Scalar Tensor
+                if alpha_coeffs.shape == ():  # Scalar Tensor
                     alpha_list = [alpha_coeffs] * num_projections
                 elif alpha_coeffs.ndim == 1 and alpha_coeffs.shape[0] == num_projections:
                     alpha_list = [Tensor(alpha_coeffs.data[i]) for i in range(num_projections)]
@@ -123,7 +122,7 @@ class DifferentiationFunction(Function):
                  raise TypeError(f"Unsupported type for alpha_coeffs: {type(alpha_coeffs)}")
         # --- End Parameter Handling ---
 
-        ctx.save_for_backward((input_tensor, *alpha_list)) # Save input and alpha tensors
+        ctx.save_for_backward((input_tensor, *alpha_list))  # Save input and alpha tensors
         ctx.save_value('projections_ops', projections)
 
         # Start with identity term: D[Psi] = Psi + ...
@@ -137,10 +136,10 @@ class DifferentiationFunction(Function):
                 projected_tensors_for_backward.append(proj_result_tensor)
 
                 # Current alpha coefficient for this projection
-                current_alpha = alpha_list[proj_idx] # This is already a Tensor
+                current_alpha = alpha_list[proj_idx]  # This is already a Tensor
 
                 # Add term: alpha_k * P_k[ψ]
-                term_to_add = current_alpha * proj_result_tensor # Element-wise if alpha is tensor? No, alpha is scalar here.
+                term_to_add = current_alpha * proj_result_tensor  # Element-wise if alpha is tensor? No, alpha is scalar here.
                 # Ensure result and term_to_add are compatible for addition (broadcasting if needed)
                 # Since current_alpha is scalar Tensor, term_to_add has same shape as proj_result_tensor
                 result = result + term_to_add
@@ -156,10 +155,10 @@ class DifferentiationFunction(Function):
         """Backward pass for D̂[ψ] = ψ + ∑ᵢ αᵢ P̂ᵢ[ψ]."""
         saved_tensors = ctx.saved_tensors
         input_tensor = saved_tensors[0]
-        alpha_list = list(saved_tensors[1:]) # Unpack saved alpha Tensors
+        alpha_list = list(saved_tensors[1:])  # Unpack saved alpha Tensors
 
         projections_ops = ctx.saved_values.get('projections_ops', None)
-        projected_tensors = ctx.saved_values.get('projected_tensors', []) # P_k[ψ]
+        projected_tensors = ctx.saved_values.get('projected_tensors', [])  # P_k[ψ]
 
         # Initialize gradients
         grad_tensor = Tensor.zeros(input_tensor.shape, dtype=grad_output.dtype, device=input_tensor.device)
@@ -173,8 +172,8 @@ class DifferentiationFunction(Function):
         if projections_ops:
             for proj_idx, proj_op in enumerate(projections_ops):
                 pk_psi_tensor = projected_tensors[proj_idx]
-                current_alpha = alpha_list[proj_idx] # Scalar Tensor
-                current_alpha_val = current_alpha.item() # Scalar value
+                current_alpha = alpha_list[proj_idx]  # Scalar Tensor
+                current_alpha_val = current_alpha.item()  # Scalar value
 
                 # --- Contribution to grad_tensor ---
                 # (d(α_k P_k Ψ) / dΨ)^H * grad_output
@@ -182,8 +181,8 @@ class DifferentiationFunction(Function):
                 # Assuming alpha real and P_k self-adjoint: α_k P_k [grad_output]
                 # Apply P_k to grad_output
                 try:
-                    projected_grad_output = proj_op(grad_output) # P_k[grad_output]
-                    term_to_add_to_grad_tensor = current_alpha_val * projected_grad_output # alpha is real scalar
+                    projected_grad_output = proj_op(grad_output)  # P_k[grad_output]
+                    term_to_add_to_grad_tensor = current_alpha_val * projected_grad_output  # alpha is real scalar
                     grad_tensor += term_to_add_to_grad_tensor
                 except Exception as e:
                      warnings.warn(f"Could not compute P_k[grad_output] for projection {proj_idx}. Gradient contribution skipped. Error: {e}", RuntimeWarning)
@@ -193,7 +192,7 @@ class DifferentiationFunction(Function):
                 # dY/dα_k = P_k[Ψ]
                 # dL/dα_k = Re(Tr(grad_output^H * P_k[Ψ])) = Re( <grad_output | P_k[Ψ]> )
                 inner_prod_complex = sum(grad_output.data[i].conjugate() * pk_psi_tensor.data[i] for i in range(len(grad_output.data)))
-                grad_alphas[proj_idx].data[0] += inner_prod_complex.real # Add to scalar tensor
+                grad_alphas[proj_idx].data[0] += inner_prod_complex.real  # Add to scalar tensor
 
         # Return gradients: grad for tensor, grads for each alpha, grad for projections (None)
         return (grad_tensor, *grad_alphas, None)
@@ -258,31 +257,31 @@ class HarmonizationFunction(Function):
         s_val_tensor = SyntonicStabilityAutogradFunction.apply(
             input_tensor,
             s_calc_alpha_d,
-            s_calc_beta0_h, s_calc_gamma0_h, # beta0, gamma0 for H within S
-            s_calc_d_projs if s_calc_d_projs is not None else projections, # Use H's projs if specific not given
+            s_calc_beta0_h, s_calc_gamma0_h,  # beta0, gamma0 for H within S
+            s_calc_d_projs if s_calc_d_projs is not None else projections,  # Use H's projs if specific not given
             s_calc_h_projs if s_calc_h_projs is not None else projections,
             s_calc_syntony_op_h if s_calc_syntony_op_h is not None else syntony_op,
-            s_calc_kappa_h, s_calc_epsilon0_h, s_calc_mu_h, s_calc_lambda_h, # Fixed profile params for H within S
-            s_calc_alpha_h_d_norm, s_calc_h_d_norm_projs # Fixed params for D_norm within H within S
-        ) # Returns scalar Tensor
+            s_calc_kappa_h, s_calc_epsilon0_h, s_calc_mu_h, s_calc_lambda_h,  # Fixed profile params for H within S
+            s_calc_alpha_h_d_norm, s_calc_h_d_norm_projs  # Fixed params for D_norm within H within S
+        )  # Returns scalar Tensor
 
         # D_norm = ||D[input_tensor] - input_tensor|| using fixed alpha
         d_output_for_d_norm = DifferentiationFunction.apply(
             input_tensor, d_norm_calc_alpha, d_norm_calc_projections
         )
         d_minus_psi = d_output_for_d_norm - input_tensor
-        d_norm_tensor = NormFunction.apply(d_minus_psi) # Scalar Tensor
+        d_norm_tensor = NormFunction.apply(d_minus_psi)  # Scalar Tensor
         # --- End S and D_norm Calculation ---
 
         # --- Calculate effective coefficients using profiles ---
         # beta_eff = beta0 * (1 - exp(-kappa * S))
         # gamma_eff = gamma0 * tanh(lambda_coeff * D_norm)
-        current_beta_eff = beta_profile(s_val_tensor, beta0_t, kappa_t) # Scalar Tensor
-        current_gamma_eff = gamma_profile(d_norm_tensor, gamma0_t, lambda_coeff_t) # Scalar Tensor
+        current_beta_eff = beta_profile(s_val_tensor, beta0_t, kappa_t)  # Scalar Tensor
+        current_gamma_eff = gamma_profile(d_norm_tensor, gamma0_t, lambda_coeff_t)  # Scalar Tensor
         # --- End Coefficient Calculation ---
 
         # Initialize result: H[Psi] = Psi - ProjTerm + SyntTerm
-        result = input_tensor.copy() # Start with Psi
+        result = input_tensor.copy()  # Start with Psi
 
         # --- Projection Term: - β(S) ∑ᵢ [ P̂ᵢ|Ψ⟩⟨Ψ|P̂ᵢ / (||P̂ᵢ|Ψ⟩||² + ε(S)) ] ---
         # Simplified in code to: - β(S) ∑ᵢ cᵢ Pᵢ[Ψ] where cᵢ = ⟨Ψ|P̂ᵢΨ⟩ / (||P̂ᵢΨ||² + ε)
@@ -292,20 +291,20 @@ class HarmonizationFunction(Function):
                 # P_k[Ψ]
                 pk_psi = proj_op(input_tensor)
                 # ||P_k[Ψ]||²
-                norm_sq_k_tensor = NormFunction.apply(pk_psi) ** 2 # Scalar Tensor
+                norm_sq_k_tensor = NormFunction.apply(pk_psi) ** 2  # Scalar Tensor
                 norm_sq_k_scalar = norm_sq_k_tensor.item()
 
                 # ε(S) = ε₀ e⁻μ ||P̂ᵢ|Ψ⟩||²
-                current_epsilon_k = epsilon_profile(norm_sq_k_tensor, epsilon0_t, mu_t) # Scalar Tensor
+                current_epsilon_k = epsilon_profile(norm_sq_k_tensor, epsilon0_t, mu_t)  # Scalar Tensor
                 current_epsilon_k_scalar = current_epsilon_k.item()
 
                 # Denominator: ||P̂ᵢ|Ψ⟩||² + ε(S)
-                denominator_val = norm_sq_k_scalar + current_epsilon_k_scalar + 1e-12 # Add epsilon for stability
+                denominator_val = norm_sq_k_scalar + current_epsilon_k_scalar + 1e-12  # Add epsilon for stability
 
                 # Numerator: ⟨Ψ|P̂ᵢΨ⟩ (inner product)
                 # Use conjugate(input_tensor) dot pk_psi
                 input_conj = input_tensor.conjugate()
-                overlap_k_tensor = input_conj.dot(pk_psi) # Scalar Tensor
+                overlap_k_tensor = input_conj.dot(pk_psi)  # Scalar Tensor
                 overlap_k_complex = overlap_k_tensor.item()
 
                 # Coefficient c_k = ⟨Ψ|P̂ᵢΨ⟩ / (||P̂ᵢΨ||² + ε)
@@ -316,14 +315,14 @@ class HarmonizationFunction(Function):
                     'pk_psi': pk_psi,                      # Tensor P_k[Psi]
                     'overlap_k_tensor': overlap_k_tensor,  # Scalar Tensor <Psi|P_k Psi>
                     'norm_sq_k_tensor': norm_sq_k_tensor,  # Scalar Tensor ||P_k Psi||^2
-                    'epsilon_k_tensor': current_epsilon_k, # Scalar Tensor epsilon_k
+                    'epsilon_k_tensor': current_epsilon_k,  # Scalar Tensor epsilon_k
                     'coeff_val_k': coeff_val_k_complex     # Python complex scalar c_k
                     # beta_eff is saved later
                 })
 
                 # Term to subtract: β(S) * c_k * P_k[Ψ]
                 # beta_eff is a scalar Tensor
-                term_to_subtract = current_beta_eff * coeff_val_k_complex * pk_psi # Tensor operation
+                term_to_subtract = current_beta_eff * coeff_val_k_complex * pk_psi  # Tensor operation
                 result = result - term_to_subtract
         # --- End Projection Term ---
 
@@ -331,12 +330,12 @@ class HarmonizationFunction(Function):
         syntony_intermediate_s_psi = None
         if syntony_op:
             # S_op[Psi]
-            s_psi = syntony_op(input_tensor) # Assuming syntony_op returns Tensor
+            s_psi = syntony_op(input_tensor)  # Assuming syntony_op returns Tensor
             syntony_intermediate_s_psi = s_psi
 
             # Term to add: γ(D) * S_op[Psi]
             # gamma_eff is a scalar Tensor
-            term_to_add = current_gamma_eff * s_psi # Tensor operation
+            term_to_add = current_gamma_eff * s_psi  # Tensor operation
             result = result + term_to_add
         # --- End Syntony Term ---
 
@@ -346,8 +345,8 @@ class HarmonizationFunction(Function):
         # Save operators and intermediates
         ctx.save_value('projections_ops', projections)
         ctx.save_value('syntony_op', syntony_op)
-        ctx.save_value('projection_intermediates', projection_intermediates) # List of dicts
-        ctx.save_value('syntony_intermediate_s_psi', syntony_intermediate_s_psi) # Tensor S[Psi] or None
+        ctx.save_value('projection_intermediates', projection_intermediates)  # List of dicts
+        ctx.save_value('syntony_intermediate_s_psi', syntony_intermediate_s_psi)  # Tensor S[Psi] or None
 
         return result
 
@@ -389,8 +388,8 @@ class HarmonizationFunction(Function):
         lambda_coeff_scalar = lambda_coeff_t.item()
         epsilon0_scalar = epsilon0_t.item()
         mu_scalar = mu_t.item()
-        current_beta_eff_scalar = current_beta_eff_t.item() # beta_eff = beta0(1-exp(-kS))
-        current_gamma_eff_scalar = current_gamma_eff_t.item() # gamma_eff = gamma0*tanh(l*D)
+        current_beta_eff_scalar = current_beta_eff_t.item()  # beta_eff = beta0(1-exp(-kS))
+        current_gamma_eff_scalar = current_gamma_eff_t.item()  # gamma_eff = gamma0*tanh(l*D)
 
         # Part 1: Gradients from Projection Term: Y_proj_sum = - ∑ β_eff * c_k * P_k[Ψ]
         if projections_ops:
@@ -406,14 +405,14 @@ class HarmonizationFunction(Function):
             for proj_idx, proj_op in enumerate(projections_ops):
                 interm = projection_intermediates[proj_idx]
                 pk_psi_t = interm['pk_psi']           # Tensor P_k[Psi]
-                overlap_k_t = interm['overlap_k_tensor'] # Scalar Tensor <Psi|P_k Psi>
-                norm_sq_k_t = interm['norm_sq_k_tensor'] # Scalar Tensor ||P_k Psi||^2
-                epsilon_k_t = interm['epsilon_k_tensor'] # Scalar Tensor epsilon_k
+                overlap_k_t = interm['overlap_k_tensor']  # Scalar Tensor <Psi|P_k Psi>
+                norm_sq_k_t = interm['norm_sq_k_tensor']  # Scalar Tensor ||P_k Psi||^2
+                epsilon_k_t = interm['epsilon_k_tensor']  # Scalar Tensor epsilon_k
                 coeff_val_k_val = interm['coeff_val_k']  # Python complex scalar c_k
 
                 norm_sq_k_scalar = norm_sq_k_t.item()
                 epsilon_k_scalar = epsilon_k_t.item()
-                denom_k_val = norm_sq_k_scalar + epsilon_k_scalar + 1e-12 # Denominator D'
+                denom_k_val = norm_sq_k_scalar + epsilon_k_scalar + 1e-12  # Denominator D'
 
                 # --- Gradient w.r.t. profile parameters (beta0, kappa, epsilon0, mu) ---
                 # Comes from dL/d(beta_eff) and dL/d(epsilon_k)
@@ -421,7 +420,7 @@ class HarmonizationFunction(Function):
                 # dL/d(beta_eff) term: Re(Tr(grad_output^H * (-c_k * P_k[Psi])))
                 dL_dbeta_eff_term_k_complex = sum(grad_output.data[i].conjugate() * (-coeff_val_k_val * pk_psi_t.data[i])
                                                   for i in range(len(grad_output.data)))
-                dL_dbeta_eff_term_k_real = dL_dbeta_eff_term_k_complex.real # beta_eff is real
+                dL_dbeta_eff_term_k_real = dL_dbeta_eff_term_k_complex.real  # beta_eff is real
 
                 # Accumulate to grad_beta0 and grad_kappa
                 grad_beta0.data[0] += dL_dbeta_eff_term_k_real * d_beta_eff_d_beta0
@@ -435,7 +434,7 @@ class HarmonizationFunction(Function):
                 dc_k_deps_k = -coeff_val_k_val / denom_k_val
                 dL_deps_k_term_complex = sum(grad_output.data[i].conjugate() * (-current_beta_eff_scalar * dc_k_deps_k * pk_psi_t.data[i])
                                              for i in range(len(grad_output.data)))
-                dL_deps_k_term_real = dL_deps_k_term_complex.real # epsilon_k is real
+                dL_deps_k_term_real = dL_deps_k_term_complex.real  # epsilon_k is real
 
                 # Chain rule to epsilon0, mu
                 # d(epsilon_k)/d(epsilon0) = exp(-mu * norm_sq_k)
@@ -453,10 +452,9 @@ class HarmonizationFunction(Function):
 
                 # Contribution via P_k[Psi]: -(beta_eff * c_k)^* P_k^H[grad_output]
                 # Assume P_k self-adjoint, beta_eff real
-                projected_grad_output_for_pk = proj_op(grad_output) # P_k[grad_output]
+                projected_grad_output_for_pk = proj_op(grad_output)  # P_k[grad_output]
                 term1_contrib = -current_beta_eff_scalar * coeff_val_k_val.conjugate() * projected_grad_output_for_pk
                 grad_tensor += term1_contrib
-
 
         # Part 2: Gradients from Syntony Term: Y_synt = γ(D) * Ŝ[Ψ]
         if syntony_op and s_psi_tensor_fwd is not None:
@@ -474,7 +472,7 @@ class HarmonizationFunction(Function):
             # dL/d(gamma_eff) = Re(Tr(grad_output^H * S_op[Psi]))
             dL_dgamma_eff_term_complex = sum(grad_output.data[i].conjugate() * s_psi_tensor_fwd.data[i]
                                             for i in range(len(grad_output.data)))
-            dL_dgamma_eff_term_real = dL_dgamma_eff_term_complex.real # gamma_eff is real
+            dL_dgamma_eff_term_real = dL_dgamma_eff_term_complex.real  # gamma_eff is real
 
             # Accumulate to grad_gamma0 and grad_lambda_coeff
             grad_gamma0.data[0] += dL_dgamma_eff_term_real * d_gamma_eff_d_gamma0
@@ -489,7 +487,7 @@ class HarmonizationFunction(Function):
 
             # Contribution via S_op[Psi]: gamma_eff^* S_op^H[grad_output]
             # Assume S_op self-adjoint, gamma_eff real
-            s_op_grad_output = syntony_op(grad_output) # S_op[grad_output]
+            s_op_grad_output = syntony_op(grad_output)  # S_op[grad_output]
             term2_contrib = current_gamma_eff_scalar * s_op_grad_output
             grad_tensor += term2_contrib
 
@@ -505,10 +503,10 @@ class HarmonizationFunction(Function):
         # are returned implicitly via the autograd graph. We return None for the
         # parameter slots corresponding to these internal calculations as they
         # are not direct inputs to *this* Function's forward call in the user API sense.
-        num_none_grads_for_internal_params = 14 # Count of internal calc params in signature
+        num_none_grads_for_internal_params = 14  # Count of internal calc params in signature
         return (grad_tensor, grad_beta0, grad_gamma0, grad_kappa, grad_epsilon0, grad_mu, grad_lambda_coeff,
-                None, None, # Grads for projections, syntony_op
-                *([None] * num_none_grads_for_internal_params) # Grads for internal calc params
+                None, None,  # Grads for projections, syntony_op
+                *([None] * num_none_grads_for_internal_params)  # Grads for internal calc params
                )
 
 
@@ -551,15 +549,15 @@ class SyntonicStabilityAutogradFunction(Function):
         # --- Calculate H[Psi] for S ---
         # Use fixed base coeffs (beta0_h_s, gamma0_h_s) and fixed profile params
         harm_result_for_s = HarmonizationFunction.apply(
-            tensor_psi_t, # Input Psi for H_s
+            tensor_psi_t,  # Input Psi for H_s
             # Profile parameters for *this* H_s (fixed values)
-            beta0=beta0_h_s, gamma0=gamma0_h_s, # Pass as base coeffs
+            beta0=beta0_h_s, gamma0=gamma0_h_s,  # Pass as base coeffs
             kappa=h_kappa_s, epsilon0=h_epsilon0_s, mu=h_mu_s, lambda_coeff=h_lambda_coeff_s,
             # Operators for *this* H_s
             projections=h_projections_s, syntony_op=syntony_op_h_s,
             # Parameters for S-calc *within this H_s* (MUST be fixed defaults)
-            s_calc_alpha_d=DEFAULT_ALPHA_FOR_S_CALC_D, # Recursive level default
-            s_calc_d_projs=None, # Use default/None
+            s_calc_alpha_d=DEFAULT_ALPHA_FOR_S_CALC_D,  # Recursive level default
+            s_calc_d_projs=None,  # Use default/None
             s_calc_beta0_h=DEFAULT_BETA0_FOR_S_CALC_H,
             s_calc_gamma0_h=DEFAULT_GAMMA0_FOR_S_CALC_H,
             s_calc_h_projs=None,
@@ -571,7 +569,7 @@ class SyntonicStabilityAutogradFunction(Function):
             s_calc_alpha_h_d_norm=DEFAULT_ALPHA_FOR_S_CALC_H_D_NORM,
             s_calc_h_d_norm_projs=None,
             # Parameters for D_norm-calc *within this H_s* (MUST use fixed alpha)
-            d_norm_calc_alpha=h_d_norm_calc_alpha_s, # Use the alpha passed for H's D_norm
+            d_norm_calc_alpha=h_d_norm_calc_alpha_s,  # Use the alpha passed for H's D_norm
             d_norm_calc_projections=h_d_norm_calc_projections_s
         )
 
@@ -591,13 +589,13 @@ class SyntonicStabilityAutogradFunction(Function):
         is_diff_harm_norm_zero = norm_diff_harm < epsilon_tensor
 
         # Use arithmetic workaround for conditionals:
-        denominator = diff_norm_val + epsilon_tensor # Add epsilon to avoid division by zero
+        denominator = diff_norm_val + epsilon_tensor  # Add epsilon to avoid division by zero
         stability_ratio = norm_diff_harm / denominator
         stability = one_tensor - stability_ratio
 
         # Clamp result between 0 and 1
         clamped_stability_lower = Tensor.maximum(zero_tensor, stability)
-        clamped_stability_final = Tensor.minimum(one_tensor, clamped_stability_lower) # Scalar Tensor
+        clamped_stability_final = Tensor.minimum(one_tensor, clamped_stability_lower)  # Scalar Tensor
 
         # Save only the primary input tensor_psi for backward, as other params are fixed floats/Nones
         ctx.save_for_backward((tensor_psi_t,))
@@ -641,7 +639,7 @@ class RecursionFunction(Function):
                 tensor: Tensor,
                 # D operator parameters
                 alpha0_D: Union[float, Tensor] = ProfileConfig().alpha0,
-                gamma_alpha_D: Union[float, Tensor] = ProfileConfig().gamma_alpha, # Parameter for alpha profile
+                gamma_alpha_D: Union[float, Tensor] = ProfileConfig().gamma_alpha,  # Parameter for alpha profile
                 d_projections: Optional[List[Callable]] = None,
                 # H operator parameters (profile parameters)
                 beta0_H: Union[float, Tensor] = ProfileConfig().beta0,
@@ -687,7 +685,7 @@ class RecursionFunction(Function):
                 input_tensor,
                 DEFAULT_ALPHA_FOR_S_CALC_D,
                 DEFAULT_BETA0_FOR_S_CALC_H, DEFAULT_GAMMA0_FOR_S_CALC_H,
-                d_projections, h_projections, syntony_op_H, # Use R's proj/syntony ops if S-specific aren't given
+                d_projections, h_projections, syntony_op_H,  # Use R's proj/syntony ops if S-specific aren't given
                 DEFAULT_KAPPA_FOR_S_CALC_H, DEFAULT_EPSILON0_FOR_S_CALC_H,
                 DEFAULT_MU_FOR_S_CALC_H, DEFAULT_LAMBDA_FOR_S_CALC_H,
                 DEFAULT_ALPHA_FOR_S_CALC_H_D_NORM, None
@@ -707,8 +705,8 @@ class RecursionFunction(Function):
 
         # Store context for backward pass of RecursionFunction
         # Need inputs to D, output of D, inputs to H
-        ctx.save_for_backward(input_tensor, alpha_d_coeff_tensor, S_for_D, # D inputs
-                              diff_result, # D output / H input
+        ctx.save_for_backward(input_tensor, alpha_d_coeff_tensor, S_for_D,  # D inputs
+                              diff_result,  # D output / H input
                               # H profile parameters (ensure Tensors)
                               beta0_H if isinstance(beta0_H, Tensor) else Tensor(beta0_H),
                               gamma0_H if isinstance(gamma0_H, Tensor) else Tensor(gamma0_H),
@@ -734,14 +732,14 @@ class RecursionFunction(Function):
         # --- Apply Harmonization ---
         # Pass all parameters for H, including its internal calc params
         harm_result = HarmonizationFunction.apply(
-            diff_result, # Input is the result of D
-            beta0_H, gamma0_H, kappa_H, epsilon0_H, mu_H, lambda_coeff_H, # H profile params
-            h_projections, syntony_op_H, # H operators
-            s_calc_alpha_d_H, s_calc_d_projs_H, s_calc_beta0_h_H, # H's internal S params
+            diff_result,  # Input is the result of D
+            beta0_H, gamma0_H, kappa_H, epsilon0_H, mu_H, lambda_coeff_H,  # H profile params
+            h_projections, syntony_op_H,  # H operators
+            s_calc_alpha_d_H, s_calc_d_projs_H, s_calc_beta0_h_H,  # H's internal S params
             s_calc_gamma0_h_H, s_calc_h_projs_H, s_calc_syntony_op_h_H,
             s_calc_kappa_h_H, s_calc_lambda_h_H, s_calc_epsilon0_h_H, s_calc_mu_h_H,
             s_calc_alpha_h_d_norm_H, s_calc_h_d_norm_projs_H,
-            d_norm_calc_alpha_H, d_norm_calc_projections_H # H's internal D_norm params
+            d_norm_calc_alpha_H, d_norm_calc_projections_H  # H's internal D_norm params
         )
         # --- End Harmonization ---
 
@@ -751,7 +749,7 @@ class RecursionFunction(Function):
     def backward(ctx, grad_output: Tensor) -> Tuple[Optional[Tensor], ...]:
         """Backward pass R̂[ψ] = Ĥ[D̂[ψ]]."""
         # The autograd engine manages gradient propagation through the composed ops
-        num_params = 26 # tensor, alpha0_D, gamma_alpha_D, d_proj, beta0_H, ..., d_norm_proj_H, S_for_D
+        num_params = 26  # tensor, alpha0_D, gamma_alpha_D, d_proj, beta0_H, ..., d_norm_proj_H, S_for_D
         return (None,) * num_params
 
 
@@ -1213,3 +1211,426 @@ def calculate_syntonic_stability_fixed(
         DEFAULT_MU_FOR_S_CALC_H, DEFAULT_LAMBDA_FOR_S_CALC_H,
         DEFAULT_ALPHA_FOR_S_CALC_H_D_NORM, None
     )
+
+
+def calculate_syntonic_stability_no_grad(
+                psi: Tensor,
+                alpha_d: float = DEFAULT_ALPHA_FOR_S_CALC_D,
+                d_projections: Optional[List[Callable]] = None,
+                beta0_h: float = DEFAULT_BETA0_FOR_S_CALC_H,
+                gamma0_h: float = DEFAULT_GAMMA0_FOR_S_CALC_H,
+                **kwargs) -> float:
+    """
+    Non-autograd version of calculate_syntonic_stability.
+    Directly calculates the scalar value without building an autograd graph.
+    Useful for coefficient calculations where we don't need gradient tracking.
+
+    Returns:
+        float: Syntonic Stability Index S(Ψ) as a Python float.
+    """
+    # This is a simplified implementation of S without autograd tracking
+    # Calculate D[Psi] without autograd
+    alpha_coeff = alpha_profile(0.0, alpha_d, ProfileConfig().gamma_alpha)
+    diff_result = psi + alpha_coeff * (psi if d_projections is None else apply_projections(psi, d_projections))
+    
+    # Calculate H[Psi] without autograd (very simplified)
+    beta_eff = beta_profile(0.0, beta0_h, ProfileConfig().kappa) 
+    harm_result = psi - beta_eff * psi  # Simplified without projections
+    
+    # Calculate ||D-H|| and ||D||
+    diff_harm = diff_result - harm_result
+    diff_harm_norm = diff_harm.norm().item()
+    diff_norm = diff_result.norm().item()
+    
+    # Calculate S = 1 - ||D-H|| / ||D||
+    epsilon = 1e-12  # Small value to avoid division by zero
+    if diff_norm < epsilon:
+        return 1.0 if diff_harm_norm < epsilon else 0.0
+    
+    stability = 1.0 - (diff_harm_norm / diff_norm)
+    return max(0.0, min(1.0, stability))
+
+
+# --- Fractal Analysis Functions ---
+
+def flatten_index(idx, strides):
+    """Calculate flat index from multi-dimensional index and strides."""
+    return sum(i * s for i, s in zip(idx, strides))
+
+
+def fractal_dimension(tensor: Tensor, min_box_size: int = 2, max_box_size: Optional[int] = None) -> float:
+    """
+    Calculate the fractal dimension of a tensor using the box-counting method.
+
+    Args:
+        tensor: Input tensor.
+        min_box_size: Minimum box size for counting.
+        max_box_size: Maximum box size (default: half smallest dimension).
+
+    Returns:
+        Estimated fractal dimension.
+    """
+    if not isinstance(tensor, Tensor):
+        tensor = Tensor(tensor)
+
+    # Binarize the tensor based on non-zero absolute value
+    # Using a small threshold for numerical stability
+    binary_tensor_data = [abs(x) > 1e-10 for x in tensor.data]
+
+    min_dim_shape = min(tensor.shape) if tensor.shape else 0
+    if max_box_size is None:
+        max_box_size = min_dim_shape // 2
+    # Basic validation for box sizes
+    if min_box_size <= 0: min_box_size = 1
+    if max_box_size < min_box_size: max_box_size = min_box_size
+
+    log_counts = []
+    log_sizes = []
+
+    for box_size in range(min_box_size, max_box_size + 1):
+        count = 0
+        if len(tensor.shape) == 0: # Scalar
+            count = 1 if binary_tensor_data[0] else 0
+        elif len(tensor.shape) == 1:
+            for i in range(0, tensor.shape[0], box_size):
+                if any(binary_tensor_data[j] for j in range(i, min(i + box_size, tensor.shape[0]))):
+                    count += 1
+        elif len(tensor.shape) == 2:
+            rows, cols = tensor.shape
+            for r_loop in range(0, rows, box_size):
+                for c_loop in range(0, cols, box_size):
+                    box_has_value = False
+                    for i in range(r_loop, min(r_loop + box_size, rows)):
+                        if box_has_value: break
+                        for j in range(c_loop, min(c_loop + box_size, cols)):
+                            # Use strides for correct indexing
+                            idx = flatten_index((i, j), tensor.strides)
+                            if idx < len(binary_tensor_data) and binary_tensor_data[idx]:
+                                box_has_value = True
+                                break
+                    if box_has_value:
+                        count += 1
+        else:
+            # General N-dimensional box counting (simplified implementation)
+            import itertools
+            ranges = [range(0, s, box_size) for s in tensor.shape]
+            for start_indices in itertools.product(*ranges):
+                box_has_value = False
+                # Iterate within the box
+                box_indices_ranges = [range(start_indices[d], min(start_indices[d] + box_size, tensor.shape[d])) for d in range(len(tensor.shape))]
+                for current_indices in itertools.product(*box_indices_ranges):
+                     idx = flatten_index(current_indices, tensor.strides)
+                     if idx < len(binary_tensor_data) and binary_tensor_data[idx]:
+                         box_has_value = True
+                         break
+                if box_has_value:
+                    count +=1
+
+        if count > 0:
+            log_counts.append(math.log(count))
+            # Use log(1/box_size) = -log(box_size)
+            log_sizes.append(-math.log(box_size))
+
+    if len(log_counts) < 2:
+        return 0.0  # Cannot perform regression
+
+    # Linear regression: log_counts = slope * (-log_sizes) + intercept
+    # Slope is the fractal dimension
+    n = len(log_sizes)
+    sum_x = sum(log_sizes)
+    sum_y = sum(log_counts)
+    sum_xy = sum(x * y for x, y in zip(log_sizes, log_counts))
+    sum_xx = sum(x * x for x in log_sizes)
+
+    denominator = (n * sum_xx - sum_x * sum_x)
+    if abs(denominator) < 1e-10:
+        return 0.0 # Avoid division by zero
+
+    slope = (n * sum_xy - sum_x * sum_y) / denominator
+    return slope
+
+
+def multifractal_spectrum(tensor: Tensor, q_values: Optional[List[float]] = None,
+                          min_box_size: int = 2, max_box_size: Optional[int] = None
+                         ) -> Tuple[List[float], List[float], List[float]]:
+    """
+    Calculate the multifractal spectrum (f(α) vs α) of a tensor.
+
+    Args:
+        tensor: Input tensor.
+        q_values: List of q moments (default: covers typical range).
+        min_box_size: Minimum box size.
+        max_box_size: Maximum box size.
+
+    Returns:
+        Tuple: (q_values used, f_alpha values, alpha values).
+    """
+    if not isinstance(tensor, Tensor):
+        tensor = Tensor(tensor)
+    if q_values is None:
+        q_values = [-5., -3., -2., -1., -0.5, 0., 0.5, 1., 2., 3., 5.]
+
+    abs_tensor = tensor.abs()
+    sum_val = abs_tensor.sum().item()
+    if abs(sum_val) < 1e-12: # Handle zero tensor
+        return q_values, [0.0] * len(q_values), [0.0] * len(q_values)
+
+    # Normalize tensor data to get measure P_i
+    norm_data = [x / sum_val for x in abs_tensor.data]
+
+    min_dim_shape = min(tensor.shape) if tensor.shape else 0
+    if max_box_size is None:
+        max_box_size = min_dim_shape // 2
+    if min_box_size <= 0: min_box_size = 1
+    if max_box_size < min_box_size: max_box_size = min_box_size
+
+    tau_q_slopes = []
+
+    for q_val in q_values:
+        log_partition_sums = []
+        log_eps = [] # log(box_size)
+
+        for box_size in range(min_box_size, max_box_size + 1):
+            partition_sum_q = 0.0
+            num_boxes_with_measure = 0
+
+            # Simplified N-D implementation
+            import itertools
+            ranges = [range(0, s, box_size) for s in tensor.shape]
+            for start_indices in itertools.product(*ranges):
+                box_measure = 0.0
+                # Iterate within the box
+                box_indices_ranges = [range(start_indices[d], min(start_indices[d] + box_size, tensor.shape[d])) for d in range(len(tensor.shape))]
+                for current_indices in itertools.product(*box_indices_ranges):
+                     idx = flatten_index(current_indices, tensor.strides)
+                     if idx < len(norm_data):
+                         box_measure += norm_data[idx]
+
+                if box_measure > 1e-12: # Use a small threshold
+                    num_boxes_with_measure += 1
+                    if abs(q_val - 1.0) < 1e-9: # Handle q = 1 case
+                        partition_sum_q += box_measure * math.log(box_measure)
+                    else:
+                        partition_sum_q += box_measure ** q_val
+
+            if num_boxes_with_measure > 0:
+                # Store log(partition_sum) vs log(box_size)
+                # τ(q) = lim [log Σ Pᵢ(ε)^q] / log ε
+                # For q=1, τ(1) = lim [Σ Pᵢ(ε) log Pᵢ(ε)] / log ε
+                log_eps.append(math.log(box_size))
+                if abs(q_val - 1.0) < 1e-9:
+                    log_partition_sums.append(partition_sum_q) # Store Σ P log P directly
+                else:
+                    # Avoid log(0) if partition_sum_q is zero or negative
+                    if partition_sum_q > 1e-12:
+                         log_partition_sums.append(math.log(partition_sum_q))
+                    else:
+                         # If sum is effectively zero, this point might be unreliable, skip it
+                         log_eps.pop() # Remove corresponding log_eps
+                         continue
+
+        # Perform linear regression: log(Σ P^q) = τ(q) * log(ε) + C
+        # Or for q=1: Σ P log P = τ(1) * log(ε) + C
+        if len(log_eps) < 2:
+            tau_q_slopes.append(0.0) # Cannot perform regression
+            continue
+
+        n = len(log_eps)
+        sum_x = sum(log_eps) # Sum of log(ε)
+        sum_y = sum(log_partition_sums) # Sum of log(Σ P^q) or Σ P log P
+        sum_xy = sum(x * y for x, y in zip(log_eps, log_partition_sums))
+        sum_xx = sum(x * x for x in log_eps)
+        denominator = (n * sum_xx - sum_x * sum_x)
+
+        if abs(denominator) < 1e-10:
+            slope = 0.0
+        else:
+            slope = (n * sum_xy - sum_x * sum_y) / denominator
+        tau_q_slopes.append(slope) # This slope is τ(q)
+
+    # Calculate α(q) and f(α) using Legendre transform
+    # α(q) = dτ(q)/dq
+    # f(α) = qα(q) - τ(q)
+    alpha_values = []
+    f_alpha_values = []
+
+    # Use finite differences to approximate dτ/dq
+    for i in range(len(q_values)):
+        q_i = q_values[i]
+        tau_i = tau_q_slopes[i]
+
+        if i == 0: # Forward difference
+            if len(q_values) > 1:
+                dq = q_values[i+1] - q_i
+                dtau = tau_q_slopes[i+1] - tau_i
+                alpha = dtau / dq if abs(dq) > 1e-9 else 0.0
+            else:
+                alpha = 0.0
+        elif i == len(q_values) - 1: # Backward difference
+             if len(q_values) > 1:
+                 dq = q_i - q_values[i-1]
+                 dtau = tau_i - tau_q_slopes[i-1]
+                 alpha = dtau / dq if abs(dq) > 1e-9 else 0.0
+             else:
+                 alpha = 0.0
+        else: # Central difference
+            dq = q_values[i+1] - q_values[i-1]
+            dtau = tau_q_slopes[i+1] - tau_q_slopes[i-1]
+            alpha = dtau / dq if abs(dq) > 1e-9 else 0.0
+
+        f_alpha = q_i * alpha - tau_i
+        alpha_values.append(alpha)
+        f_alpha_values.append(f_alpha)
+
+    return q_values, f_alpha_values, alpha_values
+
+
+# --- Advanced CRT Operators ---
+
+def i_pi_operation(tensor: Tensor, n_phase: int = 2, m_cycle: int = 1
+                   ) -> Tuple[Tensor, Tensor, float]:
+    """
+    Implement the i≈π relationship operation: P^n[Ψ] vs C^m[Ψ].
+    P is phase op (iΨ), C is cycle op (-Ψ).
+
+    Args:
+        tensor: Input tensor Ψ.
+        n_phase: Number of phase operations (P).
+        m_cycle: Number of cycle operations (C).
+
+    Returns:
+        Tuple: (Phase result P^n[Ψ], Cycle result C^m[Ψ], Difference norm ||P^n - C^m||).
+    """
+    if not isinstance(tensor, Tensor):
+        tensor = Tensor(tensor)
+    if tensor.dtype not in [Dtype.COMPLEX64, Dtype.COMPLEX128]:
+        tensor = tensor.to(dtype=Dtype.COMPLEX64)
+
+    # Phase operation: P^n[Ψ] = (i^n)Ψ
+    phase_factor = complex(0, 1) ** n_phase
+    phase_result = tensor * phase_factor
+
+    # Cycle operation: C^m[Ψ] = (-1)^m Ψ
+    cycle_factor = complex(-1, 0) ** m_cycle
+    cycle_result = tensor * cycle_factor
+
+    # Calculate difference norm
+    diff = phase_result - cycle_result
+    diff_norm = diff.norm().item() # Get scalar value from Tensor
+
+    return phase_result, cycle_result, diff_norm
+
+
+def phase_cycle_functional_equivalence(tensor: Tensor, **kwargs) -> Tuple[float, float]:
+    """
+    Calculate functional equivalence metric based on ||P²[Ψ] - C[Ψ]||.
+
+    Args:
+        tensor: Input tensor Ψ.
+        **kwargs: Parameters passed to calculate_syntonic_stability.
+
+    Returns:
+        Tuple: (Syntonic stability S(Ψ), Functional equivalence metric E).
+               Equivalence E = 1 / (1 + ||P² - C||).
+    """
+    stability = calculate_syntonic_stability(tensor, **kwargs).item()
+    _, _, diff_norm = i_pi_operation(tensor, n_phase=2, m_cycle=1) # ||P² - C||
+
+    # Equivalence metric is inversely related to the difference norm
+    equivalence_metric = 1.0 / (1.0 + diff_norm)
+
+    # Optionally include the epsilon calculation from math_reference Theorem 7.1
+    # delta = 2.0 # Predicted range 1.5-2.0
+    # epsilon = diff_norm / ((1 - stability + 1e-10) ** delta) if stability < 1 else 0
+
+    return stability, equivalence_metric
+
+
+def recursive_stability_evolution(tensor: Tensor, iterations: int = 10, **kwargs
+                                 ) -> Tuple[List[float], Tensor]:
+    """
+    Evolve a tensor through recursion R̂ = Ĥ ∘ D̂ and track syntonic stability S.
+
+    Args:
+        tensor: Initial tensor Ψ₀.
+        iterations: Number of recursion steps.
+        **kwargs: Parameters passed to recursion and calculate_syntonic_stability.
+                  Requires alpha0_D, beta0_H, gamma0_H etc.
+
+    Returns:
+        Tuple: (List of stability values [S(Ψ₀), S(Ψ₁), ...], Final tensor Ψ_n).
+    """
+    if not isinstance(tensor, Tensor):
+        tensor = Tensor(tensor)
+    if tensor.dtype not in [Dtype.COMPLEX64, Dtype.COMPLEX128]:
+        tensor = tensor.to(dtype=Dtype.COMPLEX64)
+
+    stability_values = []
+    current_tensor = tensor
+
+    for i in range(iterations):
+        # Calculate stability of current state
+        # Pass kwargs to S calculation (which might need its own internal fixed params)
+        stability = calculate_syntonic_stability(current_tensor, **kwargs).item()
+        stability_values.append(stability)
+
+        # Apply recursion: Psi_{n+1} = R[Psi_n]
+        # Need to handle S_for_D potentially. Calculate it?
+        # For simplicity, calculate S within recursion if needed, or pass None
+        S_val_for_D = calculate_syntonic_stability(current_tensor, **kwargs) # Pass kwargs for S calculation
+        current_tensor = recursion(current_tensor, S_for_D=S_val_for_D, **kwargs) # Pass kwargs to R
+
+    # Calculate stability of final state
+    final_stability = calculate_syntonic_stability(current_tensor, **kwargs).item()
+    stability_values.append(final_stability)
+
+    return stability_values, current_tensor
+
+
+def quantum_classical_transition(tensor: Tensor, min_scale: float = 0.1,
+                                 max_scale: float = 10.0, steps: int = 20,
+                                 gamma: float = ProfileConfig().gamma0) -> Tuple[List[float], List[float]]:
+    """
+    Analyze quantum-classical transition by varying scale parameter σ in D(σ) and H(σ).
+    Calculates ratio ||D(σ)|| / ||H(σ)||. Transition near ratio = 1.
+
+    Args:
+        tensor: Input tensor Ψ.
+        min_scale: Minimum scale parameter σ.
+        max_scale: Maximum scale parameter σ.
+        steps: Number of scale steps.
+        gamma: Syntony coupling strength for H(σ) (used in simplified H).
+
+    Returns:
+        Tuple: (List of scale values σ, List of QC ratio values ||D(σ)|| / ||H(σ)||).
+    """
+    if not isinstance(tensor, Tensor):
+        tensor = Tensor(tensor)
+    if tensor.dtype not in [Dtype.COMPLEX64, Dtype.COMPLEX128]:
+        tensor = tensor.to(dtype=Dtype.COMPLEX64)
+
+    # Generate scale values on a logarithmic scale
+    scale_values = [min_scale * (max_scale / min_scale)**(i / (steps - 1)) for i in range(steps)] if steps > 1 else [min_scale]
+    qc_ratio_values = []
+
+    # Using simplified D(σ) and H(σ) from math_reference Def 3.1
+    # D(σ)[Ψ] = Ψ + (1/σ) Σ αᵢ Pᵢ[Ψ] ≈ (1 + i/σ) Ψ (highly simplified if P=Identity, alpha=1)
+    # H(σ)[Ψ] = Ψ - βσ Σ [...] + γσ Ŝ[Ψ] ≈ (1 - iβσ + γσπ) Ψ (highly simplified)
+
+    for scale in scale_values:
+        # Simplified scale-dependent D(σ)[Ψ] = (1 + i/σ) Ψ
+        scale_diff_data = [(val * complex(1, 1.0 / (scale + 1e-12))) for val in tensor.data]
+        scale_diff = Tensor(scale_diff_data, dtype=tensor.dtype, device=tensor.device)
+
+        # Simplified scale-dependent H(σ)[Ψ] = (1 - i*scale + gamma*scale*PI) Ψ (assuming beta=1)
+        op_h = complex(1 + gamma * scale * PI, -1.0 * scale) # (1+gamma*sigma*PI) - i*sigma
+        scale_harm_data = [(val * op_h) for val in tensor.data]
+        scale_harm = Tensor(scale_harm_data, dtype=tensor.dtype, device=tensor.device)
+
+        diff_norm = scale_diff.norm().item()
+        harm_norm = scale_harm.norm().item()
+
+        qc_ratio = diff_norm / (harm_norm + 1e-12) # Avoid division by zero
+        qc_ratio_values.append(qc_ratio)
+
+    return scale_values, qc_ratio_values

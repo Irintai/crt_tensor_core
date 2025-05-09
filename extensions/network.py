@@ -12,7 +12,7 @@ from typing import Tuple, List, Optional, Dict, Any, Union, Callable
 import numpy as np
 
 from ..tensor import Tensor
-from ..ops import (
+from ..ops.ops import (
     differentiation, harmonization, recursion, syntonic_stability,
     alpha_profile, beta_profile, gamma_profile
 )

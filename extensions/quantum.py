@@ -17,7 +17,7 @@ import cmath
 from typing import Tuple, List, Optional, Union, Callable, Dict, Any
 
 from ..tensor import Tensor
-from ..ops import differentiation, harmonization, recursion, syntonic_stability
+from ..ops.ops import differentiation, harmonization, recursion, syntonic_stability
 
 
 def quantum_measurement(state: Tensor, operator: Tensor, alpha: float = 0.5, 

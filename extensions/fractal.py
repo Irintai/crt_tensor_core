@@ -17,7 +17,7 @@ import math
 from typing import Tuple, List, Optional, Union, Dict, Any
 
 from ..tensor import Tensor
-from ..ops import fractal_dimension, multifractal_spectrum
+from ..ops.ops import fractal_dimension, multifractal_spectrum
 
 
 def lacunarity(tensor: Tensor, min_box_size: int = 2, 

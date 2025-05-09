@@ -18,7 +18,7 @@ import operator
 if TYPE_CHECKING:
     # Use final class names
     from .tensor import Tensor, Number, Dtype, Device
-    from .ops import (differentiation, harmonization, recursion,
+    from .ops.ops import (differentiation, harmonization, recursion,
                       calculate_syntonic_stability, # User-facing, non-autograd S calc
                       calculate_syntonic_stability_fixed) # Autograd S calc for internal use
 
@@ -28,7 +28,7 @@ from .tensor import Tensor
 from ._internal.dtype import Dtype, get_promoted_dtype, DTYPE_TO_PYTHON_TYPE
 from ._internal.device import Device, get_device, cpu
 # Import necessary ops - use the user-facing names for clarity
-from .ops import (calculate_syntonic_stability as calculate_syntonic_stability_value,
+from .ops.ops import (calculate_syntonic_stability as calculate_syntonic_stability_value,
                   recursion as apply_recursion_op)
 
 
@@ -705,7 +705,7 @@ if __name__ == "__main__":
 
         # Define parameters for the ops.recursion call
         # Use defaults from merged_ops for simplicity here
-        from .ops import (DEFAULT_ALPHA_0, DEFAULT_GAMMA_ALPHA, DEFAULT_BETA_0, DEFAULT_GAMMA_0,
+        from .ops.ops import (DEFAULT_ALPHA_0, DEFAULT_GAMMA_ALPHA, DEFAULT_BETA_0, DEFAULT_GAMMA_0,
                           DEFAULT_KAPPA, DEFAULT_EPSILON_0, DEFAULT_MU, DEFAULT_LAMBDA,
                           DEFAULT_ALPHA_FOR_INTERNAL_D, DEFAULT_BETA0_FOR_INTERNAL_H,
                           DEFAULT_GAMMA0_FOR_INTERNAL_H)

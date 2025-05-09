@@ -4,7 +4,7 @@ Examples demonstrating the use of the enhanced CRT tensor library
 """
 
 from ..tensor import Tensor
-from ..ops import (
+from ..ops.ops import (
     differentiation, harmonization, recursion, 
     calculate_syntonic_stability, phase_cycle_functional_equivalence,
     recursive_stability_evolution, quantum_classical_transition,
